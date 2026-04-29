@@ -1,226 +1,177 @@
 /**
- * ZAAM ENGINE PRO v9.5 - CORE LOGIC
- * Fokus: Fungsionalitas Tombol Kirim, Sesi Baru, dan Sidebar.
+ * NANZZAI PRO - CORE ENGINE v10.0
+ * Optimized for: api-varhad.my.id
+ * Features: Auto-copy, Dynamic Content Detection, Smooth Scrolling
  */
 
-const App = {
-    // 1. STATE MANAGEMENT
+const NanzzEngine = {
+    // 1. KONFIGURASI STATE
     state: {
         isBusy: false,
-        view: 'hero', // 'hero' atau 'chat'
-        history: JSON.parse(localStorage.getItem('zaam_session_v95')) || [],
-        apiURL: 'https://api-varhad.my.id/ai/gemini'
+        apiEndpoint: 'https://api-varhad.my.id/ai/gemini',
     },
 
-    // 2. INITIALIZATION
+    // 2. DOM SELECTORS
+    dom: {
+        list: document.getElementById('messages-list'),
+        input: document.getElementById('user-input'),
+        btn: document.getElementById('send-btn'),
+        status: document.getElementById('status-bar'),
+        window: document.getElementById('chat-window')
+    },
+
+    // 3. INISIALISASI
     init() {
-        console.log("Zaam Engine v9.5: Sinkronisasi Berhasil.");
-        this.setupMarked();
-        this.renderHistory();
+        this.setupMarkdown();
         this.bindEvents();
+        console.log("ZaamAi Pro Engine: Ready to work.");
     },
 
-    // 3. EVENT LISTENERS (Tombol & Keyboard)
-    bindEvents() {
-        const input = document.getElementById('main-textarea');
-        const overlay = document.getElementById('overlayPanel');
+    // 4. SETUP MARKED (Dengan Tombol Salin Otomatis)
+    setupMarkdown() {
+        const renderer = new marked.Renderer();
+        
+        // Custom Rule: Menambahkan Header dan Tombol Salin pada blok kodingan
+        renderer.code = (code, lang) => {
+            const id = 'code-' + Math.random().toString(36).substr(2, 9);
+            const escapedCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
+            return `
+            <div class="my-4 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-xl">
+                <div class="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800">
+                    <span class="text-[10px] font-mono font-bold text-zinc-500 uppercase tracking-widest">${lang || 'code'}</span>
+                    <button onclick="NanzzEngine.copy('${id}', this)" class="text-[10px] font-bold text-indigo-400 hover:text-white transition-all flex items-center gap-2">
+                        <i class="far fa-copy"></i> Salin
+                    </button>
+                </div>
+                <pre class="!m-0 !p-4 !bg-transparent overflow-x-auto"><code id="${id}" class="language-${lang} text-zinc-200">${escapedCode}</code></pre>
+            </div>`;
+        };
 
-        // Mengirim pesan via tombol Enter (Kecuali Shift+Enter)
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 1024) {
+        marked.setOptions({ renderer, breaks: true, gfm: true });
+    },
+
+    // 5. EVENT LISTENERS
+    bindEvents() {
+        // Handle Enter key
+        this.dom.input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                this.handleAction();
+                this.handleSend();
             }
         });
-
-        // Menutup sidebar saat klik area gelap (Overlay)
-        overlay.onclick = () => this.toggleSidebar();
     },
 
-    // 4. CORE FUNCTION: MENGIRIM PESAN
-    async handleAction() {
-        const input = document.getElementById('main-textarea');
-        const prompt = input.value.trim();
+    // 6. CORE ACTION: SEND & FETCH
+    async handleSend() {
+        const text = this.dom.input.value.trim();
+        if (!text || this.state.isBusy) return;
 
-        // Validasi: Tidak boleh kosong atau saat AI sedang berpikir
-        if (!prompt || this.state.isBusy) return;
-
-        // Berpindah dari tampilan awal (Hero) ke tampilan Chat
-        if (this.state.view === 'hero') {
-            document.getElementById('hero-landing').classList.add('hidden');
-            document.getElementById('main-render').classList.remove('hidden');
-            this.state.view = 'chat';
-        }
-
-        // Tampilkan pesan Anda di layar
-        this.appendMessage(prompt, 'user');
-        input.value = '';
-        this.autoResize(input);
-
-        // Aktifkan indikator loading
+        // Render Pesan User
+        this.addMessage(text, 'user');
+        this.dom.input.value = '';
+        this.dom.input.style.height = 'auto';
+        
         this.setLoading(true);
 
         try {
-            // Ambil data dari API dengan timeout 25 detik
+            // Fast Response Integrity (Timeout 30 detik)
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 25000);
+            const timeout = setTimeout(() => controller.abort(), 5000);
 
-            const response = await fetch(`${this.state.apiURL}?prompt=${encodeURIComponent(prompt)}`, {
+            const response = await fetch(`${this.state.apiEndpoint}?prompt=${encodeURIComponent(text)}`, {
                 signal: controller.signal
             });
             
             clearTimeout(timeout);
 
-            if (!response.ok) throw new Error("Server Error");
+            if (!response.ok) throw new Error("Gateway Error");
 
             const data = await response.json();
-            const reply = data.text || data.result || "Maaf, sistem tidak merespons.";
+            
+            // INTEGRITAS API: Deteksi mendalam untuk berbagai format JSON
+            let finalContent = "";
+            if (data && typeof data === 'object') {
+                finalContent = data.text || data.result || 
+                               (typeof data.result === 'object' ? data.result.text : null) ||
+                               Object.values(data).find(v => typeof v === 'string') || 
+                               "AI tidak memberikan respons teks.";
+            } else {
+                finalContent = data || "Gagal memproses data.";
+            }
 
-            // Tampilkan balasan AI
-            this.appendMessage(reply, 'ai');
-            this.saveToHistory(prompt, reply);
+            this.addMessage(finalContent, 'ai');
 
         } catch (error) {
-            let msg = "Koneksi ZaamAi terputus. Mohon periksa jaringan Anda.";
-            if (error.name === 'AbortError') msg = "Waktu habis (Timeout). Gunakan prompt yang lebih pendek.";
-            this.appendMessage(msg, 'ai', true);
+            let errorMsg = "Koneksi tidak stabil. Mohon coba lagi.";
+            if (error.name === 'AbortError') errorMsg = "Waktu tunggu habis. Server sedang sibuk.";
+            this.addMessage(errorMsg, 'error');
         } finally {
             this.setLoading(false);
         }
     },
 
-    // 5. UI RENDERING ENGINE
-    appendMessage(content, role, isError = false) {
-        const container = document.getElementById('main-render');
-        const node = document.createElement('div');
+    // 7. UI ENGINE
+    addMessage(content, role) {
+        const div = document.createElement('div');
+        // DEBUGGING VERTICAL: Menggunakan Flex Column agar rapi ke bawah
+        div.className = `flex flex-col gap-2 animate-in ${role === 'user' ? 'items-end' : 'items-start'}`;
         
-        // Layout Vertikal sesuai CSS .message-node
-        node.className = `message-node ${role === 'ai' ? 'ai-node' : 'user-node'}`;
+        const isUser = role === 'user';
+        const isError = role === 'error';
+        
+        const label = isUser ? 'ANDA' : (isError ? 'ERROR' : 'GEMINI');
+        const labelClass = isUser ? 'text-zinc-500 mr-1' : (isError ? 'text-red-500' : 'text-indigo-400 ml-1');
+        const bubbleClass = isUser 
+            ? 'bg-indigo-600 text-white rounded-tr-none border-transparent' 
+            : (isError ? 'bg-red-950/30 border-red-900/50 text-red-200' : 'bg-zinc-900 border-zinc-800 text-zinc-200 rounded-tl-none');
 
-        const isAI = role === 'ai';
-        const bodyHTML = isAI ? marked.parse(content) : `<p>${this.sanitize(content)}</p>`;
+        const formattedContent = isUser ? this.escapeHtml(content) : marked.parse(content);
 
-        node.innerHTML = `
-            <div class="node-avatar">
-                <i class="fas ${isAI ? 'fa-robot' : 'fa-user'}"></i>
+        div.innerHTML = `
+            <div class="flex items-center gap-2 text-[10px] font-bold tracking-widest ${labelClass}">
+                ${!isUser && !isError ? '<i class="fas fa-sparkles"></i>' : ''} ${label}
             </div>
-            <div class="node-bubble shadow-lg ${isError ? 'border-red-500/30 text-red-400 bg-red-500/5' : ''}">
-                <div class="prose prose-invert prose-sm max-w-none">
-                    ${bodyHTML}
+            <div class="max-w-[95%] md:max-w-[85%] p-4 rounded-2xl border shadow-sm ${bubbleClass}">
+                <div class="prose prose-sm md:prose-base prose-invert max-w-none">
+                    ${formattedContent}
                 </div>
             </div>
         `;
 
-        container.appendChild(node);
-        this.scrollToBottom();
+        this.dom.list.appendChild(div);
+        this.scroll();
     },
 
-    // 6. SIDEBAR & SESSION CONTROL
-    toggleSidebar() {
-        const side = document.getElementById('sidebar');
-        const over = document.getElementById('overlayPanel');
-        const isActive = side.classList.toggle('active');
-        
-        // Sidebar kembali ke asal/muncul dikontrol via class .active
-        over.style.display = isActive ? 'block' : 'none';
+    // 8. UTILITIES
+    setLoading(isLoading) {
+        this.state.isBusy = isLoading;
+        this.dom.status.classList.toggle('hidden', !isLoading);
+        this.dom.btn.disabled = isLoading;
+        this.dom.btn.innerHTML = isLoading ? '<i class="fas fa-circle-notch animate-spin"></i>' : '<i class="fas fa-paper-plane-vertical"></i>';
     },
 
-    newSession() {
-        // Reset tampilan ke awal (Sesi Baru)
-        if (confirm("Mulai sesi baru? Riwayat chat saat ini akan dibersihkan dari layar.")) {
-            location.reload();
-        }
+    scroll() {
+        this.dom.window.scrollTo({ top: this.dom.window.scrollHeight, behavior: 'smooth' });
     },
 
-    // 7. UTILITIES (Salin Kode, Scroll, Auto-Resize)
-    setupMarked() {
-        const renderer = new marked.Renderer();
-        renderer.code = (code, lang) => {
-            const id = 'snippet-' + Math.random().toString(36).substr(2, 9);
-            return `
-            <div class="code-block-container">
-                <div class="code-meta">
-                    <span class="lang-tag">${lang || 'code'}</span>
-                    <button class="copy-trigger" onclick="App.copyCode('${id}', this)">
-                        <i class="far fa-copy"></i> Salin
-                    </button>
-                </div>
-                <pre><code id="${id}">${code.replace(/</g, '&lt;')}</code></pre>
-            </div>`;
-        };
-        marked.setOptions({ renderer, breaks: true });
-    },
-
-    copyCode(targetId, btn) {
-        const text = document.getElementById(targetId).innerText;
+    copy(id, btn) {
+        const text = document.getElementById(id).innerText;
         navigator.clipboard.writeText(text).then(() => {
-            const old = btn.innerHTML;
+            const original = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-check text-green-400"></i> Tersalin';
-            setTimeout(() => btn.innerHTML = old, 2000);
+            setTimeout(() => { btn.innerHTML = original; }, 2000);
         });
     },
 
-    autoResize(el) {
-        el.style.height = 'auto';
-        el.style.height = el.scrollHeight + 'px';
-    },
-
-    setLoading(status) {
-        this.state.isBusy = status;
-        document.getElementById('thinking-ui').classList.toggle('hidden', !status);
-        document.getElementById('send-btn').disabled = status;
-    },
-
-    scrollToBottom() {
-        const flow = document.getElementById('chat-flow');
-        flow.scrollTo({ top: flow.scrollHeight, behavior: 'smooth' });
-    },
-
-    quick(text) {
-        document.getElementById('main-textarea').value = text;
-        this.handleAction();
-    },
-
-    saveToHistory(u, a) {
-        const session = { id: Date.now(), title: u.substring(0, 30) + '...', u, a };
-        this.state.history.unshift(session);
-        if (this.state.history.length > 15) this.state.history.pop();
-        localStorage.setItem('zaam_session_v95', JSON.stringify(this.state.history));
-        this.renderHistory();
-    },
-
-    renderHistory() {
-        const rail = document.getElementById('history-rail');
-        const header = rail.querySelector('p');
-        rail.innerHTML = '';
-        rail.appendChild(header);
-
-        this.state.history.forEach(item => {
-            const div = document.createElement('div');
-            div.className = "px-8 py-3 text-xs text-slate-400 hover:bg-white/5 cursor-pointer truncate transition-all flex items-center gap-3";
-            div.innerHTML = `<i class="far fa-comment-alt text-indigo-500"></i> ${item.title}`;
-            div.onclick = () => this.loadSession(item);
-            rail.appendChild(div);
-        });
-    },
-
-    loadSession(data) {
-        const render = document.getElementById('main-render');
-        document.getElementById('hero-landing').classList.add('hidden');
-        render.classList.remove('hidden');
-        render.innerHTML = '';
-        this.state.view = 'chat';
-        this.appendMessage(data.u, 'user');
-        this.appendMessage(data.a, 'ai');
-        if (window.innerWidth < 1024) this.toggleSidebar();
-    },
-
-    sanitize(str) {
-        const d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 };
 
-// Aktifkan aplikasi saat halaman siap
-document.addEventListener('DOMContentLoaded', () => App.init());
+// Hubungkan ke window agar fungsi onclick="NanzzEngine.handleSend()" bekerja
+window.handleSend = () => NanzzEngine.handleSend();
+// Jalankan Engine
+NanzzEngine.init();
