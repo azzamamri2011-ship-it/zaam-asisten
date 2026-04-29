@@ -1,78 +1,58 @@
 /**
- * ZAAM-ASISTEN PRO ENGINE v9.5
- * Author: Gemini Adaptive AI
- * Features: Vertical Debugging, Auto-Copy, Session Persistence
+ * ZAAM-CORE v9.7 (STABLE EDITION)
+ * Logika Fast-Response & Anti-Connection Drop
  */
 
-const App = {
-    // Application State Management
+const Core = {
     state: {
-        isBusy: false,
-        view: 'hero',
-        logs: JSON.parse(localStorage.getItem('zaam_ultra_logs')) || []
+        isProcessing: false,
+        view: 'welcome',
+        history: JSON.parse(localStorage.getItem('zaam_stable_v9')) || []
     },
 
-    // Reference Elements for DOM Manipulation
     dom: {
-        input: document.getElementById('main-textarea'),
-        btn: document.getElementById('send-btn'),
-        render: document.getElementById('main-render'),
-        hero: document.getElementById('hero-landing'),
-        scroller: document.getElementById('chat-flow'),
-        loader: document.getElementById('thinking-ui'),
+        input: document.getElementById('user-input'),
+        btn: document.getElementById('send-trigger'),
+        list: document.getElementById('message-list'),
+        welcome: document.getElementById('welcome-view'),
+        loader: document.getElementById('loading-state'),
+        scroller: document.getElementById('chat-scroller'),
         sidebar: document.getElementById('sidebar'),
-        overlay: document.getElementById('overlayPanel'),
-        history: document.getElementById('history-rail')
+        overlay: document.getElementById('uiOverlay'),
+        historyList: document.getElementById('history-container')
     },
 
-    // Initialization Sequence
     init() {
-        this.renderLogs();
-        this.registerEvents();
-        this.setupMarked();
-        console.log("%c ZAAM-ENGINE ONLINE ", "background: #6366f1; color: #fff; font-weight: bold;");
+        this.renderHistory();
+        this.setupMarkdown();
+        this.bindEvents();
     },
 
-    // Setup Markdown with Feature: Code Copy Injection
-    setupMarked() {
+    setupMarkdown() {
         const renderer = new marked.Renderer();
-        
-        // Overwrite Code Block Rendering
         renderer.code = (code, lang) => {
-            const blockId = 'snippet-' + Math.random().toString(36).substr(2, 9);
-            const language = lang || 'source';
-            
+            const id = 'code-' + Math.random().toString(36).substr(2, 9);
             return `
-                <div class="code-block-container">
-                    <div class="code-meta">
-                        <span class="lang-tag">${language}</span>
-                        <button class="copy-trigger" onclick="App.copySnippet('${blockId}', this)">
+                <div class="code-container">
+                    <div class="code-header">
+                        <span class="lang-label">${lang || 'code'}</span>
+                        <button class="copy-btn" onclick="Core.copyText('${id}', this)">
                             <i class="far fa-copy"></i> Salin
                         </button>
                     </div>
-                    <pre><code id="${blockId}">${this.escapeHtml(code)}</code></pre>
+                    <pre><code id="${id}">${this.escape(code)}</code></pre>
                 </div>`;
         };
-
-        marked.setOptions({ 
-            renderer: renderer, 
-            breaks: true, 
-            gfm: true,
-            headerIds: false,
-            mangle: false 
-        });
+        marked.setOptions({ renderer, breaks: true, gfm: true });
     },
 
-    registerEvents() {
-        // Desktop Send Key (Enter without Shift)
+    bindEvents() {
         this.dom.input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 1024) {
                 e.preventDefault();
-                this.handleAction();
+                this.sendMessage();
             }
         });
-
-        // Overlay handling for mobile
         this.dom.overlay.onclick = () => this.toggleSidebar();
     },
 
@@ -81,161 +61,131 @@ const App = {
         this.dom.overlay.style.display = active ? 'block' : 'none';
     },
 
-    autoResize(el) {
+    resize(el) {
         el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+        el.style.height = el.scrollHeight + 'px';
     },
 
-    quick(prompt) {
-        this.dom.input.value = prompt;
-        this.autoResize(this.dom.input);
-        this.handleAction();
-    },
+    async sendMessage() {
+        const text = this.dom.input.value.trim();
+        if (!text || this.state.isProcessing) return;
 
-    // Feature: Copy Logic with Visual Feedback
-    async copySnippet(id, btn) {
-        const codeElement = document.getElementById(id);
-        if (!codeElement) return;
-
-        try {
-            await navigator.clipboard.writeText(codeElement.innerText);
-            
-            // UI Feedback
-            const original = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check text-green-400"></i> Tersalin';
-            btn.style.borderColor = '#22c55e';
-            
-            setTimeout(() => {
-                btn.innerHTML = original;
-                btn.style.borderColor = '';
-            }, 2500);
-        } catch (err) {
-            console.error('Copy failed:', err);
-        }
-    },
-
-    // Main Messaging Engine
-    async handleAction() {
-        const val = this.dom.input.value.trim();
-        if (!val || this.state.isBusy) return;
-
-        // Transition from Hero to Chat
-        if (this.state.view === 'hero') {
-            this.dom.hero.classList.add('hidden');
-            this.dom.render.classList.remove('hidden');
+        if (this.state.view === 'welcome') {
+            this.dom.welcome.classList.add('hidden');
+            this.dom.list.classList.remove('hidden');
             this.state.view = 'chat';
         }
 
-        this.injectUI(val, 'user');
-        this.clearInput();
-        this.toggleLoading(true);
+        this.appendUI(text, 'user');
+        this.dom.input.value = '';
+        this.dom.input.style.height = 'auto';
+        this.setLoading(true);
 
+        // --- FAST RESPONSE FETCH LOGIC ---
         try {
-            const response = await fetch(`https://api-varhad.my.id/ai/gemini?prompt=${encodeURIComponent(val)}`);
-            if (!response.ok) throw new Error('Network response fail');
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 detik timeout
+
+            const response = await fetch(`https://api-varhad.my.id/ai/gemini?prompt=${encodeURIComponent(text)}`, {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+            if (!response.ok) throw new Error("Server Sibuk");
 
             const data = await response.json();
-            const aiReply = data.text || data.result || "Gagal memproses data.";
+            const reply = data.text || data.result || "Gagal mendapatkan respons valid.";
 
-            this.injectUI(aiReply, 'ai');
-            this.persist(val, aiReply);
+            this.appendUI(reply, 'ai');
+            this.saveHistory(text, reply);
 
         } catch (error) {
-            this.injectUI("Koneksi ZaamAi terputus. Mohon periksa jaringan Anda atau coba kembali beberapa saat lagi.", 'ai', true);
+            let errorMsg = "Koneksi tidak stabil. Saya akan mencoba menyambungkan ulang...";
+            if (error.name === 'AbortError') errorMsg = "Server memakan waktu terlalu lama. Coba kirim ulang pesan singkat.";
+            
+            this.appendUI(errorMsg, 'ai', true);
         } finally {
-            this.toggleLoading(false);
+            this.setLoading(false);
         }
     },
 
-    injectUI(content, role, isErr = false) {
+    appendUI(content, role, isError = false) {
         const node = document.createElement('div');
+        node.className = `msg-entry ${role === 'user' ? 'user-node' : 'ai-node'}`;
+        
         const isUser = role === 'user';
-        
-        // Debugging Vertical: node-node-column layout
-        node.className = `message-node ${isUser ? 'user-node' : 'ai-node'}`;
-        
-        const htmlContent = isUser ? this.escapeHtml(content) : marked.parse(content);
-        const icon = isUser ? 'fa-user' : 'fa-robot';
+        const body = isUser ? this.escape(content) : marked.parse(content);
 
         node.innerHTML = `
-            <div class="node-avatar"><i class="fas ${icon}"></i></div>
-            <div class="node-bubble ${isErr ? 'text-red-400 border-red-500/20' : ''}">
+            <div class="node-info">
+                <div class="avatar"><i class="fas ${isUser ? 'fa-user' : 'fa-robot'}"></i></div>
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">${isUser ? 'Anda' : 'Zaam AI'}</span>
+            </div>
+            <div class="bubble ${isError ? 'border-red-500/30 text-red-400 bg-red-500/5' : ''}">
                 <div class="prose prose-invert prose-sm max-w-none">
-                    ${htmlContent}
+                    ${body}
                 </div>
             </div>
         `;
 
-        this.dom.render.appendChild(node);
-        this.autoScroll();
+        this.dom.list.appendChild(node);
+        this.scroll();
     },
 
-    toggleLoading(status) {
-        this.state.isBusy = status;
-        this.dom.loader.classList.toggle('hidden', !status);
-        this.dom.btn.disabled = status;
-        this.dom.input.placeholder = status ? "Memproses kodingan..." : "Masukkan instruksi kodingan di sini...";
-    },
-
-    autoScroll() {
-        this.dom.scroller.scrollTo({ top: this.dom.scroller.scrollHeight, behavior: 'smooth' });
-    },
-
-    clearInput() {
-        this.dom.input.value = '';
-        this.dom.input.style.height = 'auto';
-    },
-
-    persist(u, a) {
-        const entry = {
-            id: Date.now(),
-            title: u.substring(0, 35) + '...',
-            u: u,
-            a: a,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-        this.state.logs.unshift(entry);
-        if (this.state.logs.length > 20) this.state.logs.pop();
-        localStorage.setItem('zaam_ultra_logs', JSON.stringify(this.state.logs));
-        this.renderLogs();
-    },
-
-    renderLogs() {
-        this.dom.history.innerHTML = '<p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-8 mb-4">Riwayat Terkini</p>';
-        this.state.logs.forEach(log => {
-            const btn = document.createElement('div');
-            btn.className = 'px-8 py-3.5 text-xs text-slate-400 hover:bg-white/5 hover:text-white cursor-pointer truncate transition-all border-l-2 border-transparent hover:border-indigo-500';
-            btn.innerHTML = `<i class="far fa-comment-alt mr-3 text-indigo-500/50"></i> ${log.title}`;
-            btn.onclick = () => this.loadLog(log);
-            this.dom.history.appendChild(btn);
+    copyText(id, btn) {
+        const code = document.getElementById(id).innerText;
+        navigator.clipboard.writeText(code).then(() => {
+            const old = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check text-green-400"></i> Tersalin';
+            setTimeout(() => btn.innerHTML = old, 2000);
         });
     },
 
-    loadLog(data) {
-        this.dom.hero.classList.add('hidden');
-        this.dom.render.classList.remove('hidden');
-        this.dom.render.innerHTML = '';
-        this.state.view = 'chat';
-        this.injectUI(data.u, 'user');
-        this.injectUI(data.a, 'ai');
-        if (window.innerWidth < 1024) this.toggleSidebar();
+    saveHistory(u, a) {
+        const session = { id: Date.now(), title: u.substring(0, 30) + '...', u, a };
+        this.state.history.unshift(session);
+        if (this.state.history.length > 15) this.state.history.pop();
+        localStorage.setItem('zaam_stable_v9', JSON.stringify(this.state.history));
+        this.renderHistory();
     },
 
-    newSession() {
-        this.dom.render.innerHTML = '';
-        this.dom.hero.classList.remove('hidden');
-        this.dom.render.classList.add('hidden');
-        this.state.view = 'hero';
-        this.clearInput();
-        if (window.innerWidth < 1024) this.toggleSidebar();
+    renderHistory() {
+        this.dom.historyList.innerHTML = '<p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-8 mb-4">Percakapan Terakhir</p>';
+        this.state.history.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'px-8 py-3 text-xs text-slate-400 hover:bg-white/5 cursor-pointer truncate transition-all';
+            div.innerHTML = `<i class="far fa-comment-dots mr-3 text-indigo-500"></i> ${item.title}`;
+            div.onclick = () => {
+                this.dom.welcome.classList.add('hidden');
+                this.dom.list.classList.remove('hidden');
+                this.dom.list.innerHTML = '';
+                this.state.view = 'chat';
+                this.appendUI(item.u, 'user');
+                this.appendUI(item.a, 'ai');
+                if (window.innerWidth < 1024) this.toggleSidebar();
+            };
+            this.dom.historyList.appendChild(div);
+        });
     },
 
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+    setLoading(s) {
+        this.state.isProcessing = s;
+        this.dom.loader.classList.toggle('hidden', !s);
+        this.dom.btn.disabled = s;
+    },
+
+    scroll() {
+        this.dom.scroller.scrollTo({ top: this.dom.scroller.scrollHeight, behavior: 'smooth' });
+    },
+
+    reset() { location.reload(); },
+
+    escape(t) {
+        const d = document.createElement('div');
+        d.textContent = t;
+        return d.innerHTML;
     }
 };
 
-// Initialize Application
-App.init();
+Core.init();
