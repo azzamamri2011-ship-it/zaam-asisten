@@ -1,329 +1,226 @@
 /**
- * ZAAM-ASISTEN ULTRA ENGINE v10.5
- * Build: Stable - Enterprise Grade
- * Fix: Button Not Responding, Vertical Layout Debugging, Auto-Copy Integration
+ * ZAAM ENGINE PRO v9.5 - CORE LOGIC
+ * Fokus: Fungsionalitas Tombol Kirim, Sesi Baru, dan Sidebar.
  */
 
-const ZaamEngine = {
+const App = {
     // 1. STATE MANAGEMENT
     state: {
         isBusy: false,
-        view: 'welcome',
-        history: JSON.parse(localStorage.getItem('zaam_ultra_data')) || [],
-        apiEndpoint: 'https://api-varhad.my.id/ai/gemini',
-        sessionStartTime: Date.now()
+        view: 'hero', // 'hero' atau 'chat'
+        history: JSON.parse(localStorage.getItem('zaam_session_v95')) || [],
+        apiURL: 'https://api-varhad.my.id/ai/gemini'
     },
 
-    // 2. DOM SELECTORS (Pastikan ID di HTML Sesuai)
-    dom: {
-        input: document.getElementById('user-input'),
-        sendBtn: document.getElementById('send-btn'),
-        chatFlow: document.getElementById('chat-flow'),
-        chatContainer: document.getElementById('chat-container'),
-        welcomeUI: document.getElementById('welcome-ui'),
-        sidebar: document.getElementById('sidebar'),
-        overlay: document.getElementById('overlay'),
-        historyList: document.getElementById('history-list'),
-        loader: null // Akan dibuat dinamis jika perlu
-    },
-
-    // 3. INITIALIZATION
+    // 2. INITIALIZATION
     init() {
-        console.log("Zaam Engine v10.5: Booting...");
-        
-        try {
-            this.setupMarked();
-            this.renderHistory();
-            this.registerEventListeners();
-            this.checkConnection();
-            console.log("Zaam Engine: Active & Functional.");
-        } catch (error) {
-            console.error("Critical Failure during Init:", error);
-        }
+        console.log("Zaam Engine v9.5: Sinkronisasi Berhasil.");
+        this.setupMarked();
+        this.renderHistory();
+        this.bindEvents();
     },
 
-    // 4. MARKED.JS CONFIGURATION (Fitur Tombol Salin)
-    setupMarked() {
-        if (typeof marked === 'undefined') {
-            console.error("Marked.js not found! Fitur kodingan tidak akan maksimal.");
-            return;
-        }
+    // 3. EVENT LISTENERS (Tombol & Keyboard)
+    bindEvents() {
+        const input = document.getElementById('main-textarea');
+        const overlay = document.getElementById('overlayPanel');
 
-        const renderer = new marked.Renderer();
-
-        // Custom Rule untuk blok kode agar ada tombol salin
-        renderer.code = (code, lang) => {
-            const codeId = 'snippet-' + Math.random().toString(36).substr(2, 9);
-            const escapedCode = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            
-            return `
-            <div class="code-wrap my-4 rounded-xl border border-white/10 bg-[#0d1117] overflow-hidden shadow-2xl">
-                <div class="flex items-center justify-between px-4 py-2 bg-[#161b22] border-b border-white/5">
-                    <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-red-500"></span>
-                        <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
-                        <span class="w-2 h-2 rounded-full bg-green-500"></span>
-                        <span class="ml-2 text-[10px] font-mono text-slate-400 uppercase tracking-widest">${lang || 'code'}</span>
-                    </div>
-                    <button onclick="ZaamEngine.copyToClipboard('${codeId}', this)" 
-                            class="flex items-center gap-2 text-[11px] font-bold text-indigo-400 hover:text-white transition-colors py-1 px-2 rounded hover:bg-indigo-600/20">
-                        <i class="far fa-copy"></i> <span>Salin Kode</span>
-                    </button>
-                </div>
-                <pre class="p-4 overflow-x-auto leading-relaxed"><code id="${codeId}" class="language-${lang} text-sm font-mono text-indigo-100">${escapedCode}</code></pre>
-            </div>`;
-        };
-
-        marked.setOptions({
-            renderer: renderer,
-            highlight: function(code, lang) {
-                return code; // Syntax highlighting bisa ditambahkan via Prism.js/Highlight.js
-            },
-            pedantic: false,
-            gfm: true,
-            breaks: true,
-            sanitize: false,
-            smartLists: true,
-            smartypants: false,
-            xhtml: false
-        });
-    },
-
-    // 5. EVENT LISTENERS
-    registerEventListeners() {
-        // Tombol Kirim Click
-        if (this.dom.sendBtn) {
-            this.dom.sendBtn.addEventListener('click', () => this.handleChatSubmission());
-        }
-
-        // Input Keyboard (Enter)
-        if (this.dom.input) {
-            this.dom.input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    this.handleChatSubmission();
-                }
-            });
-        }
-
-        // Overlay & Sidebar
-        if (this.dom.overlay) {
-            this.dom.overlay.addEventListener('click', () => this.toggleSidebar());
-        }
-
-        // Window Resize Handling
-        window.addEventListener('resize', () => {
-            if (window.innerWidth > 1024 && this.dom.sidebar.classList.contains('active')) {
-                this.toggleSidebar();
+        // Mengirim pesan via tombol Enter (Kecuali Shift+Enter)
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 1024) {
+                e.preventDefault();
+                this.handleAction();
             }
         });
+
+        // Menutup sidebar saat klik area gelap (Overlay)
+        overlay.onclick = () => this.toggleSidebar();
     },
 
-    // 6. CORE FUNCTIONALITIES
-    toggleSidebar() {
-        const isActive = this.dom.sidebar.classList.toggle('active');
-        if (this.dom.overlay) {
-            this.dom.overlay.style.display = isActive ? 'block' : 'none';
-        }
-    },
+    // 4. CORE FUNCTION: MENGIRIM PESAN
+    async handleAction() {
+        const input = document.getElementById('main-textarea');
+        const prompt = input.value.trim();
 
-    autoResize(textarea) {
-        textarea.style.height = 'auto';
-        const newHeight = Math.min(textarea.scrollHeight, 200);
-        textarea.style.height = newHeight + 'px';
-    },
-
-    async handleChatSubmission() {
-        const prompt = this.dom.input.value.trim();
+        // Validasi: Tidak boleh kosong atau saat AI sedang berpikir
         if (!prompt || this.state.isBusy) return;
 
-        // Switch View
-        if (this.state.view === 'welcome') {
-            this.dom.welcomeUI.style.display = 'none';
-            this.dom.chatContainer.classList.remove('hidden');
+        // Berpindah dari tampilan awal (Hero) ke tampilan Chat
+        if (this.state.view === 'hero') {
+            document.getElementById('hero-landing').classList.add('hidden');
+            document.getElementById('main-render').classList.remove('hidden');
             this.state.view = 'chat';
         }
 
-        // 1. Render User Message
+        // Tampilkan pesan Anda di layar
         this.appendMessage(prompt, 'user');
-        this.dom.input.value = '';
-        this.autoResize(this.dom.input);
-        
-        // 2. Start Loading
-        this.setLoadingState(true);
+        input.value = '';
+        this.autoResize(input);
 
-        // 3. Fetch Data
+        // Aktifkan indikator loading
+        this.setLoading(true);
+
         try {
-            const timeout = new AbortController();
-            const id = setTimeout(() => timeout.abort(), 30000); // 30 detik timeout
+            // Ambil data dari API dengan timeout 25 detik
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 25000);
 
-            const response = await fetch(`${this.state.apiEndpoint}?prompt=${encodeURIComponent(prompt)}`, {
-                signal: timeout.signal
+            const response = await fetch(`${this.state.apiURL}?prompt=${encodeURIComponent(prompt)}`, {
+                signal: controller.signal
             });
             
-            clearTimeout(id);
+            clearTimeout(timeout);
 
-            if (!response.ok) throw new Error("Server Response Not OK");
+            if (!response.ok) throw new Error("Server Error");
 
             const data = await response.json();
-            const aiReply = data.text || data.result || "Maaf, sistem tidak memberikan respons teks.";
+            const reply = data.text || data.result || "Maaf, sistem tidak merespons.";
 
-            // 4. Render AI Message
-            this.appendMessage(aiReply, 'ai');
-            this.saveToLocal(prompt, aiReply);
+            // Tampilkan balasan AI
+            this.appendMessage(reply, 'ai');
+            this.saveToHistory(prompt, reply);
 
         } catch (error) {
-            console.error("Chat Error:", error);
-            let errMsg = "Koneksi terputus atau server sibuk. Mohon coba lagi.";
-            if (error.name === 'AbortError') errMsg = "Permintaan terlalu lama (Timeout). Gunakan prompt yang lebih singkat.";
-            
-            this.appendMessage(errMsg, 'ai', true);
+            let msg = "Koneksi ZaamAi terputus. Mohon periksa jaringan Anda.";
+            if (error.name === 'AbortError') msg = "Waktu habis (Timeout). Gunakan prompt yang lebih pendek.";
+            this.appendMessage(msg, 'ai', true);
         } finally {
-            this.setLoadingState(false);
+            this.setLoading(false);
         }
     },
 
-    // 7. UI RENDERING
+    // 5. UI RENDERING ENGINE
     appendMessage(content, role, isError = false) {
-        const msgNode = document.createElement('div');
+        const container = document.getElementById('main-render');
+        const node = document.createElement('div');
         
-        // FIX: DEBUGGING VERTICAL (Layout Ke Bawah)
-        msgNode.className = `msg-node flex flex-col ${role === 'user' ? 'items-end' : 'items-start'} w-full`;
-        
-        const isUser = role === 'user';
-        const formattedContent = isUser ? this.escapeHTML(content) : marked.parse(content);
+        // Layout Vertikal sesuai CSS .message-node
+        node.className = `message-node ${role === 'ai' ? 'ai-node' : 'user-node'}`;
 
-        msgNode.innerHTML = `
-            <div class="flex items-center gap-2 mb-2 ${isUser ? 'flex-row-reverse' : ''}">
-                <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shadow-lg 
-                    ${isUser ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400'}">
-                    <i class="fas ${isUser ? 'fa-user' : 'fa-robot'}"></i>
-                </div>
-                <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">${isUser ? 'Client' : 'Zaam Intelligence'}</span>
+        const isAI = role === 'ai';
+        const bodyHTML = isAI ? marked.parse(content) : `<p>${this.sanitize(content)}</p>`;
+
+        node.innerHTML = `
+            <div class="node-avatar">
+                <i class="fas ${isAI ? 'fa-robot' : 'fa-user'}"></i>
             </div>
-            <div class="bubble p-4 rounded-2xl text-sm leading-relaxed shadow-sm transition-all duration-300
-                ${isUser ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-[#161b22] border border-white/5 rounded-tl-none'}
-                ${isError ? 'border-red-500/50 text-red-400 bg-red-500/5' : ''}
-                max-w-[95%] sm:max-w-[85%]">
-                <div class="prose prose-invert prose-sm max-w-none break-words">
-                    ${formattedContent}
+            <div class="node-bubble shadow-lg ${isError ? 'border-red-500/30 text-red-400 bg-red-500/5' : ''}">
+                <div class="prose prose-invert prose-sm max-w-none">
+                    ${bodyHTML}
                 </div>
             </div>
         `;
 
-        this.dom.chatContainer.appendChild(msgNode);
+        container.appendChild(node);
         this.scrollToBottom();
     },
 
-    scrollToBottom() {
-        this.dom.chatFlow.scrollTo({
-            top: this.dom.chatFlow.scrollHeight,
-            behavior: 'smooth'
-        });
-    },
-
-    setLoadingState(loading) {
-        this.state.isBusy = loading;
-        this.dom.sendBtn.disabled = loading;
-        this.dom.sendBtn.innerHTML = loading ? '<i class="fas fa-circle-notch animate-spin"></i>' : '<i class="fas fa-paper-plane"></i>';
-        this.dom.input.placeholder = loading ? "Sedang memproses instruksi..." : "Tanyakan sesuatu pada Zaam...";
-    },
-
-    // 8. UTILS & FEATURES
-    copyToClipboard(elementId, btn) {
-        const text = document.getElementById(elementId).innerText;
+    // 6. SIDEBAR & SESSION CONTROL
+    toggleSidebar() {
+        const side = document.getElementById('sidebar');
+        const over = document.getElementById('overlayPanel');
+        const isActive = side.classList.toggle('active');
         
+        // Sidebar kembali ke asal/muncul dikontrol via class .active
+        over.style.display = isActive ? 'block' : 'none';
+    },
+
+    newSession() {
+        // Reset tampilan ke awal (Sesi Baru)
+        if (confirm("Mulai sesi baru? Riwayat chat saat ini akan dibersihkan dari layar.")) {
+            location.reload();
+        }
+    },
+
+    // 7. UTILITIES (Salin Kode, Scroll, Auto-Resize)
+    setupMarked() {
+        const renderer = new marked.Renderer();
+        renderer.code = (code, lang) => {
+            const id = 'snippet-' + Math.random().toString(36).substr(2, 9);
+            return `
+            <div class="code-block-container">
+                <div class="code-meta">
+                    <span class="lang-tag">${lang || 'code'}</span>
+                    <button class="copy-trigger" onclick="App.copyCode('${id}', this)">
+                        <i class="far fa-copy"></i> Salin
+                    </button>
+                </div>
+                <pre><code id="${id}">${code.replace(/</g, '&lt;')}</code></pre>
+            </div>`;
+        };
+        marked.setOptions({ renderer, breaks: true });
+    },
+
+    copyCode(targetId, btn) {
+        const text = document.getElementById(targetId).innerText;
         navigator.clipboard.writeText(text).then(() => {
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check text-green-400"></i> <span class="text-green-400">Tersalin</span>';
-            btn.classList.add('bg-green-500/10');
-            
-            setTimeout(() => {
-                btn.innerHTML = originalHTML;
-                btn.classList.remove('bg-green-500/10');
-            }, 2500);
-        }).catch(err => {
-            console.error("Gagal menyalin:", err);
+            const old = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check text-green-400"></i> Tersalin';
+            setTimeout(() => btn.innerHTML = old, 2000);
         });
     },
 
-    saveToLocal(user, ai) {
-        const session = {
-            id: Date.now(),
-            title: user.substring(0, 35) + (user.length > 35 ? '...' : ''),
-            userPrompt: user,
-            aiResponse: ai,
-            timestamp: new Date().toISOString()
-        };
+    autoResize(el) {
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+    },
 
+    setLoading(status) {
+        this.state.isBusy = status;
+        document.getElementById('thinking-ui').classList.toggle('hidden', !status);
+        document.getElementById('send-btn').disabled = status;
+    },
+
+    scrollToBottom() {
+        const flow = document.getElementById('chat-flow');
+        flow.scrollTo({ top: flow.scrollHeight, behavior: 'smooth' });
+    },
+
+    quick(text) {
+        document.getElementById('main-textarea').value = text;
+        this.handleAction();
+    },
+
+    saveToHistory(u, a) {
+        const session = { id: Date.now(), title: u.substring(0, 30) + '...', u, a };
         this.state.history.unshift(session);
         if (this.state.history.length > 15) this.state.history.pop();
-        
-        localStorage.setItem('zaam_ultra_data', JSON.stringify(this.state.history));
+        localStorage.setItem('zaam_session_v95', JSON.stringify(this.state.history));
         this.renderHistory();
     },
 
     renderHistory() {
-        if (!this.dom.historyList) return;
-        
-        this.dom.historyList.innerHTML = '';
-        
-        if (this.state.history.length === 0) {
-            this.dom.historyList.innerHTML = '<p class="px-4 text-[11px] text-slate-600 font-bold italic">Belum ada riwayat...</p>';
-            return;
-        }
+        const rail = document.getElementById('history-rail');
+        const header = rail.querySelector('p');
+        rail.innerHTML = '';
+        rail.appendChild(header);
 
         this.state.history.forEach(item => {
-            const btn = document.createElement('button');
-            btn.className = "w-full text-left p-3 text-[12px] text-slate-400 hover:bg-indigo-600/10 hover:text-indigo-400 rounded-xl transition-all flex items-center gap-3 group";
-            btn.innerHTML = `
-                <i class="far fa-comment-alt group-hover:scale-110 transition-transform"></i>
-                <span class="truncate flex-1">${item.title}</span>
-            `;
-            btn.onclick = () => this.loadSession(item);
-            this.dom.historyList.appendChild(btn);
+            const div = document.createElement('div');
+            div.className = "px-8 py-3 text-xs text-slate-400 hover:bg-white/5 cursor-pointer truncate transition-all flex items-center gap-3";
+            div.innerHTML = `<i class="far fa-comment-alt text-indigo-500"></i> ${item.title}`;
+            div.onclick = () => this.loadSession(item);
+            rail.appendChild(div);
         });
     },
 
     loadSession(data) {
-        this.dom.welcomeUI.style.display = 'none';
-        this.dom.chatContainer.classList.remove('hidden');
-        this.dom.chatContainer.innerHTML = ''; // Reset View
+        const render = document.getElementById('main-render');
+        document.getElementById('hero-landing').classList.add('hidden');
+        render.classList.remove('hidden');
+        render.innerHTML = '';
         this.state.view = 'chat';
-        
-        this.appendMessage(data.userPrompt, 'user');
-        this.appendMessage(data.aiResponse, 'ai');
-        
+        this.appendMessage(data.u, 'user');
+        this.appendMessage(data.a, 'ai');
         if (window.innerWidth < 1024) this.toggleSidebar();
     },
 
-    quickChat(prompt) {
-        this.dom.input.value = prompt;
-        this.autoResize(this.dom.input);
-        this.handleChatSubmission();
-    },
-
-    newChat() {
-        location.reload(); // Cara termudah untuk reset total state
-    },
-
-    escapeHTML(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    },
-
-    checkConnection() {
-        if (!navigator.onLine) {
-            alert("Koneksi Internet Terputus. Zaam mungkin tidak merespons.");
-        }
+    sanitize(str) {
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
     }
 };
 
-// 9. BOOTSTRAP
-document.addEventListener('DOMContentLoaded', () => {
-    ZaamEngine.init();
-});
-
-// Shortcut Global untuk elemen HTML (karena dipanggil via onclick)
-window.App = ZaamEngine; 
+// Aktifkan aplikasi saat halaman siap
+document.addEventListener('DOMContentLoaded', () => App.init());
